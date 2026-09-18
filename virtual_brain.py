@@ -354,6 +354,121 @@ def _validate_indices(indices: Iterable[int], size: int) -> np.ndarray:
     return np.unique(values)
 
 
+# ============================================================
+# SENSORY / MOTOR INTERFACE
+# ============================================================
+
+@dataclass(frozen=True)
+class SensoryExperimentResult:
+    """Summary of one sensory-driven simulation."""
+
+    sensory_ids: np.ndarray     # global neuron IDs used as sensory input
+    motor_ids: np.ndarray       # global neuron IDs monitored as motor output
+    history: list[np.ndarray]   # active local indices per timestep (subgraph)
+    subgraph_ids: np.ndarray    # global IDs of subgraph nodes
+    steps: int
+
+    def motor_activity(self) -> list[np.ndarray]:
+        """Return active motor neuron global IDs per timestep."""
+        motor_local = np.flatnonzero(np.isin(self.subgraph_ids, self.motor_ids))
+        result = []
+        for active_local in self.history:
+            fired_motor = np.intersect1d(active_local, motor_local)
+            result.append(self.subgraph_ids[fired_motor])
+        return result
+
+    def total_motor_spikes(self) -> int:
+        return sum(len(m) for m in self.motor_activity())
+
+    def total_spikes(self) -> int:
+        return sum(len(a) for a in self.history)
+
+
+def run_sensory_experiment(
+    brain: "Connectome",
+    sensory_filter: dict[str, str] | None = None,
+    motor_filter: dict[str, str] | None = None,
+    max_sensory: int = 50,
+    max_motor: int = 200,
+    hops: int = 1,
+    steps: int = 6,
+    model: str = "lif",
+    **model_kwargs,
+) -> SensoryExperimentResult:
+    """Simulate activity driven by afferent (sensory) neurons.
+
+    Selects afferent neurons matching ``sensory_filter`` as input seeds,
+    builds a sub-connectome around them, runs the chosen model, and tracks
+    activity in efferent (motor) neurons matching ``motor_filter``.
+
+    Parameters
+    ----------
+    brain:
+        Loaded ``Connectome`` object.
+    sensory_filter:
+        Dict of ``{annotation_field: value}`` to further narrow afferent neurons.
+        Example: ``{"super_class": "visual"}``
+    motor_filter:
+        Dict to narrow efferent neurons. Defaults to all efferent neurons.
+    max_sensory:
+        Maximum number of afferent seed neurons (uses first N by index).
+    max_motor:
+        Maximum number of efferent neurons to track.
+    hops:
+        Sub-connectome expansion hops from seed neurons.
+    steps:
+        Simulation timesteps.
+    model:
+        ``"lif"`` or ``"threshold"``.
+    **model_kwargs:
+        Forwarded to the chosen model.
+    """
+    if model not in ("lif", "threshold"):
+        raise ValueError(f"model must be 'lif' or 'threshold', got {model!r}")
+
+    # Select afferent (sensory input) neurons
+    sensory_ids = brain.annotation_matches("flow", "afferent")
+    if sensory_filter:
+        for field, value in sensory_filter.items():
+            sensory_ids = np.intersect1d(
+                sensory_ids, brain.annotation_matches(field, value)
+            )
+    sensory_ids = sensory_ids[:max_sensory]
+
+    if sensory_ids.size == 0:
+        raise ValueError("No afferent neurons matched the sensory_filter.")
+
+    # Select efferent (motor output) neurons
+    motor_ids = brain.annotation_matches("flow", "efferent")
+    if motor_filter:
+        for field, value in motor_filter.items():
+            motor_ids = np.intersect1d(
+                motor_ids, brain.annotation_matches(field, value)
+            )
+    motor_ids = motor_ids[:max_motor]
+
+    # Build sub-connectome around sensory seeds
+    subgraph_ids, graph = brain.induced_subgraph(sensory_ids.tolist(), hops=hops)
+
+    # Map global sensory IDs to local subgraph indices
+    sensory_local = np.flatnonzero(np.isin(subgraph_ids, sensory_ids)).tolist()
+
+    # Run simulation
+    if model == "lif":
+        lif_history = lif_propagate(graph, sensory_local, steps=steps, **model_kwargs)
+        history = [s.active_indices for s in lif_history]
+    else:
+        history = propagate_activity(graph, sensory_local, steps=steps, **model_kwargs)
+
+    return SensoryExperimentResult(
+        sensory_ids=sensory_ids,
+        motor_ids=motor_ids,
+        history=history,
+        subgraph_ids=subgraph_ids,
+        steps=steps,
+    )
+
+
 def _decode_label(label_id: int, names: np.ndarray) -> str:
     label_id = int(label_id)
     if label_id == 0:

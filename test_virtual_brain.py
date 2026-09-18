@@ -6,10 +6,12 @@ from scipy.sparse import csr_array
 from virtual_brain import (
     AblationResult,
     Connectome,
+    SensoryExperimentResult,
     ablate,
     ablate_batch,
     lif_propagate,
     propagate_activity,
+    run_sensory_experiment,
 )
 
 
@@ -173,6 +175,59 @@ class BatchAblationTests(unittest.TestCase):
         graph = self._chain_graph(3)
         with self.assertRaises(ValueError):
             ablate_batch(graph, neurons=[0], steps=2, model="invalid")
+
+
+class SensoryInterfaceTests(unittest.TestCase):
+    def _make_brain(self, n: int, n_afferent: int, n_efferent: int) -> "Connectome":
+        """Synthetic brain: first n_afferent are afferent, last n_efferent efferent."""
+        matrix = csr_array((n, n), dtype=float)
+        flow = (
+            ["afferent"] * n_afferent
+            + ["efferent"] * n_efferent
+            + ["intrinsic"] * (n - n_afferent - n_efferent)
+        )
+        annotations = {
+            "flow": tuple(flow),
+            "super_class": tuple(["Unknown"] * n),
+        }
+        coordinates = np.zeros((n, 3), dtype=float)
+        return Connectome(matrix=matrix, annotations=annotations, coordinates=coordinates)
+
+    def test_sensory_experiment_returns_correct_step_count(self):
+        brain = self._make_brain(10, n_afferent=2, n_efferent=2)
+        result = run_sensory_experiment(
+            brain, hops=0, steps=3, model="threshold", threshold=1.0
+        )
+        self.assertEqual(len(result.history), 4)  # t=0 … t=3
+
+    def test_sensory_ids_are_all_afferent(self):
+        brain = self._make_brain(10, n_afferent=3, n_efferent=2)
+        result = run_sensory_experiment(
+            brain, hops=0, steps=2, model="threshold", threshold=1.0
+        )
+        for nid in result.sensory_ids:
+            self.assertEqual(brain.annotations["flow"][nid], "afferent")
+
+    def test_motor_ids_are_all_efferent(self):
+        brain = self._make_brain(10, n_afferent=2, n_efferent=3)
+        result = run_sensory_experiment(
+            brain, hops=0, steps=2, model="threshold", threshold=1.0
+        )
+        for nid in result.motor_ids:
+            self.assertEqual(brain.annotations["flow"][nid], "efferent")
+
+    def test_total_motor_spikes_non_negative(self):
+        brain = self._make_brain(10, n_afferent=2, n_efferent=2)
+        result = run_sensory_experiment(
+            brain, hops=0, steps=3, model="threshold", threshold=1.0
+        )
+        self.assertGreaterEqual(result.total_motor_spikes(), 0)
+
+    def test_no_afferent_raises(self):
+        brain = self._make_brain(5, n_afferent=0, n_efferent=2)
+        with self.assertRaises(ValueError):
+            run_sensory_experiment(brain, hops=0, steps=2,
+                                   model="threshold", threshold=1.0)
 
 
 if __name__ == "__main__":
