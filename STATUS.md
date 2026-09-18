@@ -1,6 +1,6 @@
 # Virtual Fly Brain — Project Status
 
-> Last updated: 2026-09-18
+> Last updated: 2026-09-18 (commit `765bff1`)
 
 ---
 
@@ -63,7 +63,8 @@ Computational neuroscience prototype simulating *Drosophila melanogaster* neural
 | 7 | VirtualFly — BehaviorState, action labels, turn_bias | ✅ Done |
 | 8 | Batch ablation experiments | ✅ Done |
 | — | Reproducibility — git + requirements.txt | ✅ Done |
-| — | Multi-stimulus comparison | 🔄 In Progress |
+| — | Multi-stimulus comparison | ✅ Done |
+| — | Behavioral readout visualization | ✅ Done |
 
 ---
 
@@ -148,7 +149,7 @@ Wraps a `Connectome` into a fly agent. `run()` returns a list of `BehaviorState`
 python -m unittest -v test_virtual_brain.py
 ```
 
-25 tests across 6 test classes — all passing:
+30 tests across 6 test classes — all passing:
 
 | Class | Coverage |
 |-------|----------|
@@ -158,6 +159,7 @@ python -m unittest -v test_virtual_brain.py
 | `BatchAblationTests` | Ablation ranking, delta computation |
 | `SensoryInterfaceTests` | Sensory filter, motor tracking |
 | `VirtualFlyTests` | BehaviorState fields, action labels, drives |
+| `MultiStimulusTests` | compare_stimuli, metrics, condition names |
 
 ---
 
@@ -165,6 +167,10 @@ python -m unittest -v test_virtual_brain.py
 
 | Commit | Message |
 |--------|---------|
+| `765bff1` | Update STATUS.md: add visualize_behavior.py entry |
+| `6c14236` | Add visualize_behavior.py: multi-condition behavioral readout (5-panel figure) |
+| `bf3cce3` | Update STATUS.md: multi-stimulus comparison complete with sample results |
+| `324c1d9` | Add multi-stimulus comparison: StimulusCondition, MultiStimulusResult, compare_stimuli, CLI, tests |
 | `69aaa0a` | Improve sensory_filter error: show valid super_class values when filter matches nothing |
 | (prior) | Add VirtualFly behavioral simulation (Stage 7) |
 | (prior) | Add batch ablation CLI and tests (Stage 8) |
@@ -173,7 +179,9 @@ python -m unittest -v test_virtual_brain.py
 
 ---
 
-## In Progress — Multi-Stimulus Comparison
+## Completed Features (beyond PRD v0.1)
+
+### Multi-Stimulus Comparison ✅
 
 **Goal:** Compare `sensory` vs `ascending` afferent inputs under identical simulation conditions.
 
@@ -184,14 +192,6 @@ python -m unittest -v test_virtual_brain.py
 - `mean_locomotion` — average locomotion drive
 - `mean_turn_bias` — average directional bias
 - `dominant_action` — most frequent behavior label
-
-**Status:** ✅ Complete
-
-- [x] `StimulusCondition` and `MultiStimulusResult` added to `virtual_brain.py`
-- [x] `compare_stimuli()` function implemented
-- [x] `run_multi_stimulus.py` CLI created
-- [x] 5 tests added to `test_virtual_brain.py` (30/30 passing)
-- [x] Validated on real FlyWire data — committed `324c1d9`
 
 **Sample output (8 steps, LIF):**
 
@@ -206,10 +206,42 @@ Key observations:
 - Both converge on `turn_right` as dominant action
 - `sensory` shows more oscillation between `walk_forward` and `turn_right` per step
 
-**Run:**
 ```bash
 python run_multi_stimulus.py --steps 8 --model lif
 ```
+
+---
+
+### Behavioral Readout Visualization ✅
+
+**File:** `visualize_behavior.py`
+
+5-panel matplotlib figure comparing all stimulus conditions:
+
+| Panel | Content |
+|-------|---------|
+| Row 1 | Active neuron count per timestep |
+| Row 2 | Motor/efferent spike count per timestep |
+| Row 3 | Locomotion + left/right/endocrine drives + turn bias (dual axis) |
+| Row 4 | Action label timeline (color-coded spans) |
+| Row 5 | Action distribution bar chart (all conditions side-by-side) |
+
+```bash
+python visualize_behavior.py --steps 12 --model lif --save output_behavior.png
+```
+
+---
+
+## Next Steps
+
+| Priority | Task | Notes |
+|----------|------|-------|
+| High | Oscillation analysis | `sensory` alternates `walk_forward ↔ turn_right` every 2 steps — identify which neurons drive the cycle |
+| High | Ablation × stimulus | Ablate top-N neurons and replot behavior to see which condition is more disrupted |
+| Medium | Export to CSV | Per-step metrics → CSV for downstream statistical analysis |
+| Medium | Add more stimulus types | Verify `class` / `sub_class` labels with `inspect_annotations.py` to define `visual`, `tactile`, etc. |
+| Low | 3-D anatomical overlay | Color neurons by condition in `visualize_activity.py` |
+| Low | Remote git identity | `git config --global user.name / user.email` to fix committer name warning |
 
 ---
 
