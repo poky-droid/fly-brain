@@ -609,3 +609,166 @@ class VirtualFly:
             )
 
         return behaviors
+
+
+# ============================================================
+# MULTI-STIMULUS COMPARISON
+# ============================================================
+
+@dataclass(frozen=True)
+class StimulusCondition:
+    """One named stimulus condition for a multi-stimulus experiment."""
+
+    name: str
+    sensory_filter: dict[str, str] | None = None  # passed to run_sensory_experiment
+    max_sensory: int = 50
+
+
+@dataclass(frozen=True)
+class MultiStimulusResult:
+    """Side-by-side metrics for multiple stimulus conditions."""
+
+    conditions: list[str]                            # condition names
+    sensory_results: list[SensoryExperimentResult]   # one per condition
+    fly_behaviors: list[list[BehaviorState]]         # one list per condition
+
+    def summary(self) -> list[dict]:
+        """Return a list of per-condition summary dicts."""
+        rows = []
+        for name, sr, behaviors in zip(
+            self.conditions, self.sensory_results, self.fly_behaviors
+        ):
+            loco = [b.locomotion_drive for b in behaviors]
+            bias = [b.turn_bias for b in behaviors]
+            actions = [b.action for b in behaviors]
+            rows.append({
+                "condition": name,
+                "seed_neurons": len(sr.sensory_ids),
+                "total_spikes": sr.total_spikes(),
+                "motor_spikes": sr.total_motor_spikes(),
+                "mean_locomotion": float(np.mean(loco)),
+                "mean_turn_bias": float(np.mean(bias)),
+                "dominant_action": max(set(actions), key=actions.count),
+            })
+        return rows
+
+
+def compare_stimuli(
+    brain: "Connectome",
+    conditions: list[StimulusCondition],
+    max_motor: int = 200,
+    hops: int = 1,
+    steps: int = 6,
+    model: str = "lif",
+    **model_kwargs,
+) -> MultiStimulusResult:
+    """Run identical simulation conditions for multiple stimulus types.
+
+    Each condition uses its own sensory seed neurons but the same model
+    parameters, number of steps, and motor tracking set, so results are
+    directly comparable.
+
+    Parameters
+    ----------
+    brain:
+        Loaded ``Connectome`` object.
+    conditions:
+        List of ``StimulusCondition`` objects defining each input type.
+    max_motor:
+        Maximum efferent neurons tracked across all conditions.
+    hops:
+        Sub-connectome expansion hops.
+    steps:
+        Simulation timesteps.
+    model:
+        ``"lif"`` or ``"threshold"``.
+    **model_kwargs:
+        Forwarded to the simulation model.
+    """
+    if not conditions:
+        raise ValueError("At least one StimulusCondition is required.")
+
+    # Shared efferent set for fair comparison
+    motor_ids = brain.annotation_matches("flow", "efferent")[:max_motor]
+
+    sensory_results: list[SensoryExperimentResult] = []
+    fly_behaviors: list[list[BehaviorState]] = []
+
+    for cond in conditions:
+        sr = run_sensory_experiment(
+            brain,
+            sensory_filter=cond.sensory_filter,
+            max_sensory=cond.max_sensory,
+            max_motor=max_motor,
+            hops=hops,
+            steps=steps,
+            model=model,
+            **model_kwargs,
+        )
+        # Override motor_ids with the shared set for comparability
+        sr = SensoryExperimentResult(
+            sensory_ids=sr.sensory_ids,
+            motor_ids=motor_ids,
+            history=sr.history,
+            subgraph_ids=sr.subgraph_ids,
+            steps=sr.steps,
+        )
+        sensory_results.append(sr)
+
+        # Build a VirtualFly-like behavior decode from the sensory subgraph
+        # using the already-computed history
+        behaviors = _decode_behaviors_from_history(brain, sr)
+        fly_behaviors.append(behaviors)
+
+    return MultiStimulusResult(
+        conditions=[c.name for c in conditions],
+        sensory_results=sensory_results,
+        fly_behaviors=fly_behaviors,
+    )
+
+
+def _decode_behaviors_from_history(
+    brain: "Connectome",
+    sr: SensoryExperimentResult,
+) -> list[BehaviorState]:
+    """Decode BehaviorState from a SensoryExperimentResult without re-running."""
+    subgraph_ids = sr.subgraph_ids
+
+    def _local(flow_val: str, super_val: str | None = None) -> np.ndarray:
+        ids = brain.annotation_matches("flow", flow_val)
+        if super_val:
+            ids = np.intersect1d(ids, brain.annotation_matches("super_class", super_val))
+        return np.flatnonzero(np.isin(subgraph_ids, ids))
+
+    descending_local = _local("efferent", "descending")
+    left_local = np.flatnonzero(
+        np.isin(subgraph_ids, brain.annotation_matches("nerve", "left "))
+    )
+    right_local = np.flatnonzero(
+        np.isin(subgraph_ids, brain.annotation_matches("nerve", "right"))
+    )
+    endocrine_local = _local("efferent", "endocrine")
+
+    n = len(subgraph_ids)
+    behaviors: list[BehaviorState] = []
+
+    for t, active_local in enumerate(sr.history):
+        active = np.zeros(n, dtype=bool)
+        active[active_local] = True
+
+        def _drive(local_ids: np.ndarray) -> float:
+            if local_ids.size == 0:
+                return 0.0
+            return float(active[local_ids].mean())
+
+        behaviors.append(
+            BehaviorState(
+                step=t,
+                locomotion_drive=_drive(descending_local),
+                left_drive=_drive(left_local),
+                right_drive=_drive(right_local),
+                endocrine_drive=_drive(endocrine_local),
+            )
+        )
+
+    return behaviors

@@ -7,10 +7,13 @@ from virtual_brain import (
     AblationResult,
     BehaviorState,
     Connectome,
+    MultiStimulusResult,
     SensoryExperimentResult,
+    StimulusCondition,
     VirtualFly,
     ablate,
     ablate_batch,
+    compare_stimuli,
     lif_propagate,
     propagate_activity,
     run_sensory_experiment,
@@ -291,6 +294,93 @@ class VirtualFlyTests(unittest.TestCase):
             self.assertLessEqual(b.locomotion_drive, 1.0)
             self.assertGreaterEqual(b.left_drive, 0.0)
             self.assertLessEqual(b.right_drive, 1.0)
+
+
+class MultiStimulusTests(unittest.TestCase):
+    """Tests for compare_stimuli / MultiStimulusResult."""
+
+    def _make_brain(self, n=20, n_afferent=4, n_efferent=4):
+        """Minimal synthetic Connectome with afferent/efferent annotations."""
+        rng = np.random.default_rng(42)
+        data = rng.integers(1, 5, size=(n, n)).astype(float)
+        np.fill_diagonal(data, 0)
+        graph = csr_array(data)
+
+        flow = np.array(
+            ["afferent"] * n_afferent
+            + ["efferent"] * n_efferent
+            + ["intrinsic"] * (n - n_afferent - n_efferent)
+        )
+        # alternate sensory / ascending among afferents
+        super_class = np.array(
+            ["sensory" if i % 2 == 0 else "ascending" for i in range(n_afferent)]
+            + ["descending"] * n_efferent
+            + [""] * (n - n_afferent - n_efferent)
+        )
+        nerve = np.array([""] * n)
+        annotations = {
+            "flow": flow,
+            "super_class": super_class,
+            "nerve": nerve,
+            "class": np.array([""] * n),
+            "sub_class": np.array([""] * n),
+            "cell_type": np.array([""] * n),
+            "hemibrain_type": np.array([""] * n),
+            "side": np.array([""] * n),
+            "nt_type": np.array([""] * n),
+        }
+        coords = rng.random((n, 3))
+        return Connectome(matrix=graph, annotations=annotations, coordinates=coords)
+
+    def test_returns_one_result_per_condition(self):
+        brain = self._make_brain()
+        conditions = [
+            StimulusCondition("sensory",   sensory_filter={"super_class": "sensory"},   max_sensory=2),
+            StimulusCondition("ascending", sensory_filter={"super_class": "ascending"}, max_sensory=2),
+        ]
+        result = compare_stimuli(brain, conditions, max_motor=4, hops=0, steps=3, model="threshold", threshold=1.0)
+        self.assertIsInstance(result, MultiStimulusResult)
+        self.assertEqual(len(result.conditions), 2)
+        self.assertEqual(len(result.sensory_results), 2)
+        self.assertEqual(len(result.fly_behaviors), 2)
+
+    def test_summary_has_correct_keys(self):
+        brain = self._make_brain()
+        conditions = [
+            StimulusCondition("sensory",   sensory_filter={"super_class": "sensory"},   max_sensory=2),
+            StimulusCondition("ascending", sensory_filter={"super_class": "ascending"}, max_sensory=2),
+        ]
+        result = compare_stimuli(brain, conditions, max_motor=4, hops=0, steps=3, model="threshold", threshold=1.0)
+        for row in result.summary():
+            for key in ("condition", "seed_neurons", "total_spikes", "motor_spikes",
+                        "mean_locomotion", "mean_turn_bias", "dominant_action"):
+                self.assertIn(key, row)
+
+    def test_metrics_are_non_negative(self):
+        brain = self._make_brain()
+        conditions = [
+            StimulusCondition("sensory",   sensory_filter={"super_class": "sensory"},   max_sensory=2),
+            StimulusCondition("ascending", sensory_filter={"super_class": "ascending"}, max_sensory=2),
+        ]
+        result = compare_stimuli(brain, conditions, max_motor=4, hops=0, steps=3, model="threshold", threshold=1.0)
+        for row in result.summary():
+            self.assertGreaterEqual(row["total_spikes"], 0)
+            self.assertGreaterEqual(row["motor_spikes"], 0)
+            self.assertGreaterEqual(row["mean_locomotion"], 0.0)
+
+    def test_empty_conditions_raises(self):
+        brain = self._make_brain()
+        with self.assertRaises(ValueError):
+            compare_stimuli(brain, [], steps=3)
+
+    def test_condition_names_preserved(self):
+        brain = self._make_brain()
+        conditions = [
+            StimulusCondition("sensory",   sensory_filter={"super_class": "sensory"},   max_sensory=2),
+            StimulusCondition("ascending", sensory_filter={"super_class": "ascending"}, max_sensory=2),
+        ]
+        result = compare_stimuli(brain, conditions, max_motor=4, hops=0, steps=3, model="threshold", threshold=1.0)
+        self.assertEqual(result.conditions, ["sensory", "ascending"])
 
 
 if __name__ == "__main__":
