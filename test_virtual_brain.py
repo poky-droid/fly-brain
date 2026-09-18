@@ -5,8 +5,10 @@ from scipy.sparse import csr_array
 
 from virtual_brain import (
     AblationResult,
+    BehaviorState,
     Connectome,
     SensoryExperimentResult,
+    VirtualFly,
     ablate,
     ablate_batch,
     lif_propagate,
@@ -228,6 +230,67 @@ class SensoryInterfaceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             run_sensory_experiment(brain, hops=0, steps=2,
                                    model="threshold", threshold=1.0)
+
+
+class VirtualFlyTests(unittest.TestCase):
+    def _make_brain(self, n: int, n_afferent: int, n_efferent: int) -> Connectome:
+        flow = (
+            ["afferent"] * n_afferent
+            + ["efferent"] * n_efferent
+            + ["intrinsic"] * (n - n_afferent - n_efferent)
+        )
+        super_class = (
+            ["Unknown"] * n_afferent
+            + ["descending"] * n_efferent
+            + ["Unknown"] * (n - n_afferent - n_efferent)
+        )
+        annotations = {
+            "flow": tuple(flow),
+            "super_class": tuple(super_class),
+            "sub_class": tuple(["Unknown"] * n),
+            "nerve": tuple(["Unknown"] * n),
+            "class": tuple(["Unknown"] * n),
+            "cell_type": tuple(["Unknown"] * n),
+            "hemibrain": tuple(["Unknown"] * n),
+            "hemilineage": tuple(["Unknown"] * n),
+            "side": tuple(["Unknown"] * n),
+        }
+        coordinates = np.zeros((n, 3), dtype=float)
+        matrix = csr_array((n, n), dtype=float)
+        return Connectome(matrix=matrix, annotations=annotations, coordinates=coordinates)
+
+    def test_virtual_fly_run_returns_one_behavior_per_step(self):
+        brain = self._make_brain(10, n_afferent=2, n_efferent=2)
+        fly = VirtualFly(brain, max_sensory=2, hops=0)
+        behaviors = fly.run(steps=3, model="threshold", threshold=1.0)
+        self.assertEqual(len(behaviors), 4)  # t=0 … t=3
+
+    def test_behavior_state_action_is_string(self):
+        brain = self._make_brain(10, n_afferent=2, n_efferent=2)
+        fly = VirtualFly(brain, max_sensory=2, hops=0)
+        behaviors = fly.run(steps=2, model="threshold", threshold=1.0)
+        for b in behaviors:
+            self.assertIsInstance(b.action, str)
+
+    def test_turn_bias_equals_right_minus_left(self):
+        b = BehaviorState(
+            step=0,
+            locomotion_drive=0.5,
+            left_drive=0.3,
+            right_drive=0.7,
+            endocrine_drive=0.0,
+        )
+        self.assertAlmostEqual(b.turn_bias, 0.4)
+
+    def test_drives_are_between_0_and_1(self):
+        brain = self._make_brain(10, n_afferent=2, n_efferent=2)
+        fly = VirtualFly(brain, max_sensory=2, hops=0)
+        behaviors = fly.run(steps=3, model="threshold", threshold=1.0)
+        for b in behaviors:
+            self.assertGreaterEqual(b.locomotion_drive, 0.0)
+            self.assertLessEqual(b.locomotion_drive, 1.0)
+            self.assertGreaterEqual(b.left_drive, 0.0)
+            self.assertLessEqual(b.right_drive, 1.0)
 
 
 if __name__ == "__main__":

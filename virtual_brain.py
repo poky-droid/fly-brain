@@ -481,3 +481,122 @@ def _decode_label(label_id: int, names: np.ndarray) -> str:
         if value.size == 1:
             value = value.item()
     return str(value).strip()
+
+
+# ============================================================
+# VIRTUAL FLY
+# ============================================================
+
+@dataclass(frozen=True)
+class BehaviorState:
+    """Behavioral output decoded from motor neuron activity at one timestep."""
+
+    step: int
+    locomotion_drive: float    # mean activity of descending neurons (0..1)
+    left_drive: float          # mean activity of left-nerve efferents
+    right_drive: float         # mean activity of right-nerve efferents
+    endocrine_drive: float     # mean activity of endocrine efferents
+
+    @property
+    def turn_bias(self) -> float:
+        """Positive = turn right, negative = turn left."""
+        return self.right_drive - self.left_drive
+
+    @property
+    def action(self) -> str:
+        """Simple action label derived from motor drives."""
+        if self.locomotion_drive < 0.01 and self.endocrine_drive < 0.01:
+            return "rest"
+        if abs(self.turn_bias) > 0.1:
+            return "turn_right" if self.turn_bias > 0 else "turn_left"
+        if self.locomotion_drive > 0.05:
+            return "walk_forward"
+        return "idle"
+
+
+class VirtualFly:
+    """Minimal virtual fly driven by the FlyWire connectome.
+
+    Wraps the sensory→network→motor pipeline into a single object that maps
+    afferent activity to discrete behavioral states each timestep.
+    """
+
+    def __init__(self, brain: "Connectome", max_sensory: int = 50, hops: int = 1) -> None:
+        self.brain = brain
+        self.max_sensory = max_sensory
+        self.hops = hops
+
+        # Cache afferent seeds
+        self._sensory_ids = brain.annotation_matches("flow", "afferent")[:max_sensory]
+
+        # Build sub-connectome once
+        self._subgraph_ids, self._graph = brain.induced_subgraph(
+            self._sensory_ids.tolist(), hops=hops
+        )
+
+        # Map efferent sub-categories to local subgraph indices
+        desc = brain.annotation_matches("flow", "efferent")
+        desc = np.intersect1d(desc, brain.annotation_matches("super_class", "descending"))
+        self._descending_local = np.flatnonzero(np.isin(self._subgraph_ids, desc))
+
+        motor = brain.annotation_matches("flow", "efferent")
+        motor = np.intersect1d(motor, brain.annotation_matches("super_class", "motor"))
+        self._motor_local = np.flatnonzero(np.isin(self._subgraph_ids, motor))
+
+        endo = brain.annotation_matches("flow", "efferent")
+        endo = np.intersect1d(endo, brain.annotation_matches("super_class", "endocrine"))
+        self._endocrine_local = np.flatnonzero(np.isin(self._subgraph_ids, endo))
+
+        left = brain.annotation_matches("flow", "efferent")
+        left = np.intersect1d(left, brain.annotation_matches("nerve", "left "))
+        self._left_local = np.flatnonzero(np.isin(self._subgraph_ids, left))
+
+        right = brain.annotation_matches("flow", "efferent")
+        right = np.intersect1d(right, brain.annotation_matches("nerve", "right"))
+        self._right_local = np.flatnonzero(np.isin(self._subgraph_ids, right))
+
+    def run(
+        self,
+        steps: int = 6,
+        model: str = "lif",
+        **model_kwargs,
+    ) -> list[BehaviorState]:
+        """Simulate the fly for ``steps`` timesteps and return behavior per step."""
+        sensory_local = np.flatnonzero(
+            np.isin(self._subgraph_ids, self._sensory_ids)
+        ).tolist()
+
+        if model == "lif":
+            lif_history = lif_propagate(
+                self._graph, sensory_local, steps=steps, **model_kwargs
+            )
+            activity_per_step = [s.spiked for s in lif_history]
+        else:
+            raw = propagate_activity(
+                self._graph, sensory_local, steps=steps, **model_kwargs
+            )
+            n = self._graph.shape[0]
+            activity_per_step = []
+            for active_idx in raw:
+                arr = np.zeros(n, dtype=bool)
+                arr[active_idx] = True
+                activity_per_step.append(arr)
+
+        behaviors: list[BehaviorState] = []
+        for t, active in enumerate(activity_per_step):
+            def _drive(local_ids: np.ndarray) -> float:
+                if local_ids.size == 0:
+                    return 0.0
+                return float(active[local_ids].mean())
+
+            behaviors.append(
+                BehaviorState(
+                    step=t,
+                    locomotion_drive=_drive(self._descending_local),
+                    left_drive=_drive(self._left_local),
+                    right_drive=_drive(self._right_local),
+                    endocrine_drive=_drive(self._endocrine_local),
+                )
+            )
+
+        return behaviors
