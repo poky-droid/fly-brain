@@ -78,6 +78,7 @@ virtual-fly/
 ├── run_virtual_fly.py        # CLI: full VirtualFly behavioral simulation
 ├── run_multi_stimulus.py     # CLI: multi-stimulus comparison (new)
 ├── visualize_activity.py     # 3-D scatter activity visualization
+├── visualize_behavior.py     # Behavioral readout figure (5-panel, multi-condition)
 ├── test_virtual_brain.py     # Unit tests (25 tests, all passing)
 ├── requirements.txt          # Pinned dependencies
 ├── .gitignore
