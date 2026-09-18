@@ -1,0 +1,21 @@
+# Virtual environment
+.venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Dataset files (large binary, not committed)
+data/
+
+# Generated outputs
+output_*.png
+
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+*.swp
