@@ -436,6 +436,15 @@ def run_sensory_experiment(
     sensory_ids = sensory_ids[:max_sensory]
 
     if sensory_ids.size == 0:
+        # Collect valid values to help the caller debug
+        all_afferent = brain.annotation_matches("flow", "afferent")
+        if sensory_filter and all_afferent.size > 0:
+            field = next(iter(sensory_filter))
+            valid = sorted(set(brain.annotations[field][i] for i in all_afferent))
+            raise ValueError(
+                f"No afferent neurons matched sensory_filter {sensory_filter}. "
+                f"Valid values for {field!r}: {valid}"
+            )
         raise ValueError("No afferent neurons matched the sensory_filter.")
 
     # Select efferent (motor output) neurons
