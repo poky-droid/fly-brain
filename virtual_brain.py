@@ -261,6 +261,92 @@ def ablate(graph: csr_array, neuron: int) -> csr_array:
     return result.tocsr()
 
 
+@dataclass(frozen=True)
+class AblationResult:
+    """Metrics for a single neuron ablation experiment."""
+
+    neuron_id: int
+    total_spikes_normal: int
+    total_spikes_ablated: int
+    first_spike_step_normal: int   # -1 if never active
+    first_spike_step_ablated: int  # -1 if never active
+    coverage_normal: float
+    coverage_ablated: float
+
+    @property
+    def spike_delta(self) -> int:
+        return self.total_spikes_normal - self.total_spikes_ablated
+
+    @property
+    def coverage_delta(self) -> float:
+        return self.coverage_normal - self.coverage_ablated
+
+
+def ablate_batch(
+    graph: csr_array,
+    neurons: Iterable[int],
+    steps: int,
+    model: str = "lif",
+    **model_kwargs,
+) -> list[AblationResult]:
+    """Run one ablation experiment per neuron and return comparative metrics.
+
+    Parameters
+    ----------
+    graph:
+        Sparse CSR subgraph.
+    neurons:
+        Local indices of neurons to ablate one at a time.
+    steps:
+        Simulation timesteps per run.
+    model:
+        ``"lif"`` (default) or ``"threshold"``.
+    **model_kwargs:
+        Forwarded to ``lif_propagate`` or ``propagate_activity``.
+    """
+    targets = _validate_indices(neurons, graph.shape[0])
+    if model not in ("lif", "threshold"):
+        raise ValueError(f"model must be 'lif' or 'threshold', got {model!r}")
+
+    n = graph.shape[0]
+
+    def _run(g: csr_array, seed: int) -> tuple[int, int, float]:
+        if model == "lif":
+            history = lif_propagate(g, [seed], steps=steps, **model_kwargs)
+            active_per_step = [s.active_indices for s in history]
+        else:
+            active_per_step = propagate_activity(g, [seed], steps=steps, **model_kwargs)
+
+        total = sum(len(a) for a in active_per_step)
+        ever_active: set[int] = set()
+        first_step = -1
+        for t, a in enumerate(active_per_step):
+            ever_active.update(a.tolist())
+            if first_step == -1 and len(a) > 0:
+                first_step = t
+        coverage = len(ever_active) / n if n > 0 else 0.0
+        return total, first_step, coverage
+
+    results: list[AblationResult] = []
+    for neuron in targets:
+        total_n, first_n, cov_n = _run(graph, int(neuron))
+        ablated_graph = ablate(graph, int(neuron))
+        total_a, first_a, cov_a = _run(ablated_graph, int(neuron))
+        results.append(
+            AblationResult(
+                neuron_id=int(neuron),
+                total_spikes_normal=total_n,
+                total_spikes_ablated=total_a,
+                first_spike_step_normal=first_n,
+                first_spike_step_ablated=first_a,
+                coverage_normal=cov_n,
+                coverage_ablated=cov_a,
+            )
+        )
+
+    return results
+
+
 def _validate_indices(indices: Iterable[int], size: int) -> np.ndarray:
     values = np.asarray(list(indices), dtype=int)
     if values.size and (values.min() < 0 or values.max() >= size):

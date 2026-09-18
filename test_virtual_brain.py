@@ -3,7 +3,14 @@ import unittest
 import numpy as np
 from scipy.sparse import csr_array
 
-from virtual_brain import Connectome, ablate, lif_propagate, propagate_activity
+from virtual_brain import (
+    AblationResult,
+    Connectome,
+    ablate,
+    ablate_batch,
+    lif_propagate,
+    propagate_activity,
+)
 
 
 class VirtualBrainTests(unittest.TestCase):
@@ -121,6 +128,51 @@ class LIFTests(unittest.TestCase):
         # After ablation neuron 0 has no outgoing edges; only fires at t=0
         for state in history[1:]:
             self.assertNotIn(1, state.active_indices)
+
+
+class BatchAblationTests(unittest.TestCase):
+    def _chain_graph(self, n: int) -> csr_array:
+        row = list(range(n - 1))
+        col = list(range(1, n))
+        data = [100.0] * (n - 1)
+        return csr_array((data, (row, col)), shape=(n, n), dtype=float)
+
+    def test_batch_returns_one_result_per_neuron(self):
+        graph = self._chain_graph(5)
+        results = ablate_batch(graph, neurons=[0, 1, 2], steps=3,
+                               model="threshold", threshold=1.0)
+        self.assertEqual(len(results), 3)
+
+    def test_batch_result_fields_are_non_negative(self):
+        graph = self._chain_graph(5)
+        results = ablate_batch(graph, neurons=[0], steps=3,
+                               model="threshold", threshold=1.0)
+        r = results[0]
+        self.assertGreaterEqual(r.total_spikes_normal, 0)
+        self.assertGreaterEqual(r.total_spikes_ablated, 0)
+        self.assertGreaterEqual(r.coverage_normal, 0.0)
+        self.assertGreaterEqual(r.coverage_ablated, 0.0)
+
+    def test_batch_spike_delta_equals_normal_minus_ablated(self):
+        graph = self._chain_graph(6)
+        results = ablate_batch(graph, neurons=[0, 1], steps=4,
+                               model="threshold", threshold=1.0)
+        for r in results:
+            self.assertEqual(r.spike_delta,
+                             r.total_spikes_normal - r.total_spikes_ablated)
+
+    def test_batch_ablating_seed_reduces_activity(self):
+        # Ablating neuron 0 in a chain should reduce downstream propagation
+        graph = self._chain_graph(5)
+        results = ablate_batch(graph, neurons=[0], steps=4,
+                               model="threshold", threshold=1.0)
+        r = results[0]
+        self.assertGreater(r.total_spikes_normal, r.total_spikes_ablated)
+
+    def test_batch_invalid_model_raises(self):
+        graph = self._chain_graph(3)
+        with self.assertRaises(ValueError):
+            ablate_batch(graph, neurons=[0], steps=2, model="invalid")
 
 
 if __name__ == "__main__":
