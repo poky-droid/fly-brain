@@ -184,12 +184,26 @@ python -m unittest -v test_virtual_brain.py
 - `mean_turn_bias` — average directional bias
 - `dominant_action` — most frequent behavior label
 
-**Status:**
+**Status:** ✅ Complete
+
 - [x] `StimulusCondition` and `MultiStimulusResult` added to `virtual_brain.py`
 - [x] `compare_stimuli()` function implemented
 - [x] `run_multi_stimulus.py` CLI created
-- [ ] Tests for multi-stimulus added to `test_virtual_brain.py`
-- [ ] Validation run + git commit
+- [x] 5 tests added to `test_virtual_brain.py` (30/30 passing)
+- [x] Validated on real FlyWire data — committed `324c1d9`
+
+**Sample output (8 steps, LIF):**
+
+| condition | seeds | total_spikes | motor_spikes | mean_loco | mean_bias | dominant_action |
+|-----------|-------|-------------|--------------|-----------|-----------|-----------------|
+| sensory | 50 | 2702 | 41 | 0.3035 | +0.2550 | turn_right |
+| ascending | 50 | 7765 | 112 | 0.2918 | +0.2987 | turn_right |
+
+Key observations:
+- `ascending` neurons drive ~2.9× more total network activity than `sensory`
+- `ascending` recruits ~2.7× more motor spikes
+- Both converge on `turn_right` as dominant action
+- `sensory` shows more oscillation between `walk_forward` and `turn_right` per step
 
 **Run:**
 ```bash
