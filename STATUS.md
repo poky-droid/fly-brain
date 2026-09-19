@@ -70,9 +70,15 @@ Computational neuroscience prototype simulating *Drosophila melanogaster* neural
 | 14 | FlyWire sensory validation — left / right / front stimuli | ✅ Done |
 | 15 | Annotation-driven sensory lateralization via `nerve` labels | ✅ Done |
 | 16 | Motor population diagnostic and left-nerve normalization fix | ✅ Done |
-| 17 | Temporal dynamics validation — constant and switching stimuli | ✅ Done |
+| 17 | Collision and locomotion diagnosis | ✅ Done |
 | 18 | Behavioral scenario evaluation — light, obstacle, lateral/front stimuli | ✅ Done |
-| 19 | Collision and locomotion diagnosis | ✅ Done |
+| 19 | Temporal directional analysis — timestep LEFT/RIGHT/FRONT comparison | ✅ Done |
+| 20 | Directional closed-loop navigation evaluation | ✅ Done |
+| 21 | Navigation failure analysis — heading error and trajectory plots | ✅ Done |
+| 22 | Motor-to-body causality analysis | ✅ Done |
+| 23 | Sensor-to-motor timing analysis | ✅ Done |
+| 24 | Intervention-layer identification — FlyWire vs oracle control | ✅ Done |
+| 25 | Neural-to-behavior translation analysis | ✅ Done |
 | — | Reproducibility — git + requirements.txt | ✅ Done |
 | — | Multi-stimulus comparison | ✅ Done |
 | — | Behavioral readout visualization | ✅ Done |
@@ -97,6 +103,13 @@ virtual-fly/
 ├── validate_temporal_dynamics.py # CLI: temporal raw-spike diagnostics across six protocols
 ├── validate_behavioral_scenarios.py # CLI: scenario metrics and trajectory CSVs
 ├── validate_directional_behavior.py # CLI: closed-loop left/right/front evaluation
+├── analyze_directional_temporal.py # CLI: timestep bias and action distribution analysis
+├── validate_directional_navigation.py # CLI: target distance and heading trajectory evaluation
+├── analyze_navigation_failure.py # CLI: heading-error and trajectory failure analysis
+├── analyze_motor_body_causality.py # CLI: motor action/bias to body delta analysis
+├── analyze_sensor_motor_timing.py # CLI: sensor, motor, action, and body lag analysis
+├── evaluate_intervention_layers.py # CLI: FlyWire baseline vs oracle/intervention control
+├── analyze_neural_behavior_translation.py # CLI: FlyWire actions vs geometric reference
 ├── virtual_fly/              # V1 body, environment, FlyWire brain, simulation, plotting
 ├── test_virtual_fly_v1.py    # V1 body/environment/FlyWire regression tests
 ├── visualize_activity.py     # 3-D scatter activity visualization
@@ -419,6 +432,224 @@ Mean left/right motor drives are close in this long closed-loop run, so the
 current evidence supports differentiated trajectories/actions more strongly
 than a large mean motor-bias effect. This is an observation baseline; no brain,
 LIF, decoder, or collision parameters were changed.
+
+### Temporal Directional Analysis ✅
+
+**File:** `analyze_directional_temporal.py`
+
+The existing 100-step directional trajectory was analyzed at each timestep,
+without rerunning or changing the brain. The output includes:
+
+```text
+results/directional_behavior/temporal_summary.csv
+results/directional_behavior/left_right_paired.csv
+```
+
+Results:
+
+```text
+condition  mean_turn_bias  p(turn_left)  p(turn_right)  p(bias_negative)  p(bias_positive)
+left          -0.0002         0.110          0.100             0.340             0.660
+right          0.0030         0.110          0.130             0.390             0.610
+front          0.0014         0.000          0.010             0.660             0.340
+```
+
+The paired LEFT-vs-RIGHT comparison found opposite bias signs at 73% of shared
+timesteps, with LEFT bias larger at 66% and RIGHT bias larger at 34%. However,
+the mean bias difference was only `-0.0032`. Therefore the current evidence
+supports temporal/action differences, but not a strong stable mean directional
+motor bias. This is a measurement result, not a tuning target.
+
+### Directional Closed-Loop Navigation ✅
+
+**File:** `validate_directional_navigation.py`
+
+This evaluator places a target light in the body-centered `left`, `right`, or
+`front` position and lets the body move while the environment recomputes the
+sensor frame every timestep. It records distance-to-target, heading error,
+requested/applied action, motor drives, collisions, and movement.
+
+Outputs:
+
+```text
+results/directional_navigation/summary.csv
+results/directional_navigation/trajectory.csv
+```
+
+The corrected 100-step baseline is:
+
+```text
+target  distance_reduction  initial_error  final_error  turns  collision_rate
+left             -6.183          +1.571       +2.385     21          0.680
+right            -5.108          -1.571       -2.285     24          0.660
+front            +2.997           0.000       +2.630      1          0.690
+```
+
+The result demonstrates distinct body trajectories: the front target is
+approached, while the lateral targets produce different turning trajectories
+that move away from their targets. This is an empirical navigation baseline,
+not a success criterion, and no brain, LIF, decoder, or collision parameters
+were changed.
+
+### Navigation Failure Analysis ✅
+
+**File:** `analyze_navigation_failure.py`
+
+The Milestone 20 trajectories are now analyzed without rerunning the brain.
+The analyzer produces:
+
+```text
+results/directional_navigation/failure_summary.csv
+results/directional_navigation/heading_analysis.csv
+results/directional_navigation/trajectory_plot.png
+```
+
+The failure summary confirms:
+
+```text
+target  distance_reduction  final_heading_error  min_abs_heading_error
+left          -6.183               +2.385                1.269
+right         -5.108               -2.285                0.960
+front         +2.997               +2.630                0.368
+```
+
+The lateral trajectories move away despite reaching a lower absolute heading
+error at some timesteps, while the front trajectory approaches the target but
+later accumulates heading error. This localizes the next investigation to the
+relationship between heading error, requested action, collision handling, and
+body movement. No navigation correction or neural tuning was applied.
+
+### Motor-to-Body Causality Analysis ✅
+
+**File:** `analyze_motor_body_causality.py`
+
+The Milestone 20 trajectory was analyzed without rerunning the brain. Outputs:
+
+```text
+results/directional_navigation/motor_action_summary.csv
+results/directional_navigation/motor_bias_summary.csv
+results/directional_navigation/motor_body_timestep.csv
+results/directional_navigation/motor_body_causality.png
+```
+
+Measured action-to-body deltas:
+
+```text
+requested_action  mean_delta_heading  mean_delta_distance
+turn_left                 +0.1167              +0.0607
+turn_right                -0.1167              +0.0585
+walk_forward               0.0000              +0.0064
+```
+
+The Body2D contract is internally consistent: `turn_left` increases heading
+and `turn_right` decreases heading. Negative turn bias produces positive
+heading change (`+0.0558` mean), while positive turn bias produces negative
+heading change (`-0.0484` mean). Therefore the next failure investigation
+should focus on sensory/target geometry, recurrent timing, and collision
+interaction rather than the basic action-to-body mapping.
+
+### Sensor-to-Motor Timing Analysis ✅
+
+**File:** `analyze_sensor_motor_timing.py`
+
+The Milestone 20 trajectory was analyzed for timestep changes in sensor
+asymmetry, motor bias, requested action, heading, position, and distance. The
+outputs are:
+
+```text
+results/directional_navigation/timing_summary.csv
+results/directional_navigation/timing_lag_analysis.csv
+results/directional_navigation/sensor_motor_timing.csv
+results/directional_navigation/sensor_motor_timing.png
+```
+
+Selected peak lag results with a 0–10 timestep search:
+
+```text
+scenario  sensor-to-motor lag  correlation  sensor-to-action lag  action-to-heading lag
+left                   9          +0.285                     0                    0
+right                 10          -0.328                     0                   10
+front                  0          +0.106                     0                    0
+```
+
+FRONT shows a strong same-step sensor/action correlation (`+0.768`), while
+LEFT/RIGHT show weaker delayed sensor-to-motor correlations. The motor/body
+response remains consistent with the action mapping already measured. These
+cross-correlations are diagnostic evidence, not proof of causality: recurrent
+periodicity and sparse action changes can produce competing lag peaks. No
+neural or controller parameters were changed.
+
+### Intervention-Layer Identification ✅
+
+**File:** `evaluate_intervention_layers.py`
+
+Three controlled modes were compared on the same left/right/front target
+geometry:
+
+- `baseline` — current FlyWire brain and decoder
+- `oracle` — target-error reference controller, used only as a control
+- `intervention` — FlyWire output with a minimal heading guard, used only as a diagnostic
+
+Outputs:
+
+```text
+results/intervention/baseline.csv
+results/intervention/oracle.csv
+results/intervention/intervention.csv
+results/intervention/comparison.csv
+results/intervention/trajectory.csv
+results/intervention/intervention_trajectory.png
+```
+
+100-step result:
+
+```text
+mode          left_reduction  right_reduction  front_reduction
+baseline          -6.183          -5.108           +2.997
+oracle            +7.379          +9.784           +7.169
+intervention      +7.545          +9.499           +7.173
+```
+
+The oracle reaches all three targets, establishing that the body/environment
+and action API can perform lateral navigation. The current FlyWire baseline
+only approaches the front target, while the diagnostic heading guard restores
+lateral approach behavior. This localizes the failure upstream of `Body2D`,
+but the intervention is not a permanent behavioral fix and no neural or
+decoder parameters were changed.
+
+### Neural-to-Behavior Translation Analysis ✅
+
+**File:** `analyze_neural_behavior_translation.py`
+
+The baseline FlyWire trajectory is compared against a geometric reference
+action derived only from heading error (`turn_left`, `turn_right`, or
+`walk_forward`). This reference is a navigation control condition, not a
+biological ground truth.
+
+Outputs:
+
+```text
+results/intervention/translation_summary.csv
+results/intervention/translation_timestep.csv
+results/intervention/translation_confusion_matrix.csv
+results/intervention/translation_analysis.png
+```
+
+With a heading threshold of `0.15` radians:
+
+```text
+scenario  action_match_rate  turn_match_rate  left_confusion  right_confusion
+left              0.330             0.330           0.670             0.000
+right             0.340             0.340           0.000             0.660
+front             0.000             0.000           1.000             0.000
+```
+
+The lateral conditions show repeated mismatches between the FlyWire requested
+action and the geometric correction direction. FRONT initially walks forward,
+but later its heading error calls for correction while FlyWire continues the
+same recurrent action pattern. This identifies the neural-to-navigation
+translation layer as the next intervention surface; it does not claim that
+FlyWire actions are biologically wrong.
 
 ### Collision and Locomotion Diagnosis ✅
 

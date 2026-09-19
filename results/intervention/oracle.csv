@@ -1,0 +1,4 @@
+mode,scenario,steps,initial_distance,final_distance,min_distance,distance_reduction,final_heading_error,turn_count,movement_fraction,collision_rate,mean_turn_bias,mean_locomotion,action_distribution
+oracle,left,100,10.0,2.62145035836359,0.12355235956227809,7.378549641636409,-2.126866121344881,87,1.0,0.0,0.0,0.6052658660306898,"{'turn_left': 7, 'walk_forward': 13, 'turn_right': 80}"
+oracle,right,100,10.0,0.215500509392741,0.215500509392741,9.784499490607258,0.09093025549597256,9,0.21,0.79,0.0,0.1441364072407291,"{'turn_right': 7, 'walk_forward': 12, 'turn_left': 2, 'rest': 79}"
+oracle,front,100,10.0,2.831191076410431,0.0,7.16880892358957,1.8829977249821497,79,1.0,0.0,0.0,0.686187176919521,"{'walk_forward': 21, 'turn_left': 43, 'turn_right': 36}"

@@ -1,0 +1,4 @@
+mode,scenario,steps,initial_distance,final_distance,min_distance,distance_reduction,final_heading_error,turn_count,movement_fraction,collision_rate,mean_turn_bias,mean_locomotion,action_distribution
+baseline,left,100,10.0,16.1825707254234,9.613159372832468,-6.1825707254234,2.3850231156121886,21,0.31,0.68,-0.00019599303135887626,0.10238095238095238,"{'idle': 1, 'turn_left': 11, 'walk_forward': 10, 'turn_right': 10, 'rest': 68}"
+baseline,right,100,10.0,15.108062681466865,8.892349203469916,-5.1080626814668655,-2.28455347825858,24,0.34,0.66,0.002957317073170733,0.11133333333333333,"{'turn_right': 13, 'turn_left': 11, 'walk_forward': 10, 'rest': 66}"
+baseline,front,100,10.0,7.003174924083545,3.430624514428524,2.9968250759164548,2.6299250802667236,1,0.31,0.69,0.0013501742160279113,0.10095238095238095,"{'turn_right': 1, 'walk_forward': 30, 'rest': 69}"

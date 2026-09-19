@@ -1,0 +1,4 @@
+scenario,steps,sensor_change_count,motor_change_count,action_change_count,best_sensor_motor_lag,best_sensor_action_lag,best_action_heading_lag,sensor_motor_peak_correlation,sensor_action_peak_correlation,action_heading_peak_correlation,mean_heading_response
+left,100,30,99,99,9,0,0,0.2845292665439421,0.0,0.0,0.003535353535353535
+right,100,31,99,98,10,0,10,-0.3282630388122102,-0.12511873732739698,-0.2276984648808395,-0.003535353535353535
+front,100,26,99,1,0,0,0,0.1062377875629287,0.7681768164876521,0.0,0.0
