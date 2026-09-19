@@ -19,3 +19,4 @@ output_*.png
 # Editor
 .vscode/
 *.swp
+.results/
