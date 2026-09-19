@@ -1,6 +1,6 @@
 # Virtual Fly Brain — Project Status
 
-> Last updated: 2026-09-18 (commit `765bff1`)
+> Last updated: 2026-09-19
 
 ---
 
@@ -62,6 +62,7 @@ Computational neuroscience prototype simulating *Drosophila melanogaster* neural
 | 6 | Sensory / motor interface | ✅ Done |
 | 7 | VirtualFly — BehaviorState, action labels, turn_bias | ✅ Done |
 | 8 | Batch ablation experiments | ✅ Done |
+| 9 | Oscillation analysis | ✅ Done |
 | — | Reproducibility — git + requirements.txt | ✅ Done |
 | — | Multi-stimulus comparison | ✅ Done |
 | — | Behavioral readout visualization | ✅ Done |
@@ -109,6 +110,7 @@ virtual-fly/
 | `BehaviorState` | Per-step behavioral readout (drives + action label) |
 | `StimulusCondition` | Named stimulus config for multi-stimulus experiments |
 | `MultiStimulusResult` | Side-by-side metrics across stimulus conditions |
+| `OscillationResult` | Summary of transition rate and autocorrelation metrics per condition |
 
 ### Key Functions
 
@@ -121,6 +123,7 @@ virtual-fly/
 | `ablate_batch()` | Ablate top-N neurons, return ranked `AblationResult` list |
 | `run_sensory_experiment()` | Afferent seed → sub-connectome → efferent tracking |
 | `compare_stimuli()` | Run multiple `StimulusCondition`s and return `MultiStimulusResult` |
+| `analyze_oscillation()` | Compute dominant period, transition rate, and autocorrelation across behavior time series |
 
 ### VirtualFly class
 
@@ -149,7 +152,7 @@ Wraps a `Connectome` into a fly agent. `run()` returns a list of `BehaviorState`
 python -m unittest -v test_virtual_brain.py
 ```
 
-30 tests across 6 test classes — all passing:
+32 tests across 7 test classes — all passing:
 
 | Class | Coverage |
 |-------|----------|
@@ -160,6 +163,7 @@ python -m unittest -v test_virtual_brain.py
 | `SensoryInterfaceTests` | Sensory filter, motor tracking |
 | `VirtualFlyTests` | BehaviorState fields, action labels, drives |
 | `MultiStimulusTests` | compare_stimuli, metrics, condition names |
+| `OscillationTests` | period, transition rate, autocorrelation analysis |
 
 ---
 
@@ -232,13 +236,29 @@ python visualize_behavior.py --steps 12 --model lif --save output_behavior.png
 
 ---
 
+### Oscillation Analysis ✅
+
+**Goal:** quantify periodic behavior in the fly’s action sequence and continuous drives.
+
+**Metrics computed:**
+- `transition_rate` — how often actions switch between adjacent timesteps
+- `dominant_period` — recurrence period of the turn_bias signal
+- `peak_autocorr_turn_bias` — strongest positive autocorrelation in directional bias
+- `peak_autocorr_locomotion` — strongest positive autocorrelation in locomotion drive
+
+**Implementation:** `analyze_oscillation()` in `virtual_brain.py` consumes the real `SensoryExperimentResult` stream and summarizes each condition in an `OscillationResult`.
+
+**Validation:** verified with the full project suite using `python -m unittest -v test_virtual_brain.py` — 32 tests pass.
+
+---
+
 ## Next Steps
 
 | Priority | Task | Notes |
 |----------|------|-------|
-| High | Oscillation analysis | `sensory` alternates `walk_forward ↔ turn_right` every 2 steps — identify which neurons drive the cycle |
-| High | Ablation × stimulus | Ablate top-N neurons and replot behavior to see which condition is more disrupted |
-| Medium | Export to CSV | Per-step metrics → CSV for downstream statistical analysis |
+| High | Export to CSV | Per-step metrics → CSV for downstream statistical analysis |
+| High | Parameter sensitivity sweep | Validate that `sensory` vs `ascending` trends persist across threshold/leak/weight settings |
+| Medium | Ablation × stimulus refinement | Rank neurons by behavior disruption rather than raw spike loss alone |
 | Medium | Add more stimulus types | Verify `class` / `sub_class` labels with `inspect_annotations.py` to define `visual`, `tactile`, etc. |
 | Low | 3-D anatomical overlay | Color neurons by condition in `visualize_activity.py` |
 | Low | Remote git identity | `git config --global user.name / user.email` to fix committer name warning |

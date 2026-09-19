@@ -1,21 +1,28 @@
+import tempfile
 import unittest
+from pathlib import Path
 
 import numpy as np
 from scipy.sparse import csr_array
 
 from virtual_brain import (
     AblationResult,
+    AblationStimulusResult,
     BehaviorState,
     Connectome,
     MultiStimulusResult,
+    OscillationResult,
     SensoryExperimentResult,
     StimulusCondition,
     VirtualFly,
     ablate,
     ablate_batch,
+    analyze_oscillation,
     compare_stimuli,
+    export_oscillation_csv,
     lif_propagate,
     propagate_activity,
+    run_ablation_stimulus,
     run_sensory_experiment,
 )
 
@@ -381,6 +388,151 @@ class MultiStimulusTests(unittest.TestCase):
         ]
         result = compare_stimuli(brain, conditions, max_motor=4, hops=0, steps=3, model="threshold", threshold=1.0)
         self.assertEqual(result.conditions, ["sensory", "ascending"])
+
+
+class AblationStimulusTests(unittest.TestCase):
+    """Tests for ablation-by-stimulus analysis."""
+
+    def _make_brain(self, n=10, n_afferent=2, n_efferent=2):
+        rng = np.random.default_rng(9)
+        graph = csr_array(rng.integers(0, 3, size=(n, n)).astype(float))
+        np.fill_diagonal(graph.toarray(), 0)
+
+        flow = np.array(
+            ["afferent"] * n_afferent
+            + ["efferent"] * n_efferent
+            + ["intrinsic"] * (n - n_afferent - n_efferent),
+            dtype=object,
+        )
+        super_class = np.array(
+            ["sensory", "ascending"]
+            + ["descending", "descending"]
+            + ["", "", "", "", "", ""]
+        )
+        nerve = np.array(["left ", "right", "", "", "", "", "", "", "", ""])
+        annotations = {
+            "flow": flow,
+            "super_class": super_class,
+            "class": np.array([""] * n),
+            "sub_class": np.array([""] * n),
+            "cell_type": np.array([""] * n),
+            "hemibrain": np.array([""] * n),
+            "hemilineage": np.array([""] * n),
+            "side": np.array([""] * n),
+            "nerve": nerve,
+        }
+        coords = rng.random((n, 3))
+        return Connectome(matrix=graph.tocsr(), annotations=annotations, coordinates=coords)
+
+    def test_run_ablation_stimulus_returns_ranked_results(self):
+        brain = self._make_brain()
+        conditions = [
+            StimulusCondition("sensory", sensory_filter={"super_class": "sensory"}, max_sensory=1),
+            StimulusCondition("ascending", sensory_filter={"super_class": "ascending"}, max_sensory=1),
+        ]
+        results = run_ablation_stimulus(brain, conditions, top_n=2, hops=0, steps=2, model="threshold", threshold=1.0)
+        self.assertTrue(len(results) >= 2)
+        self.assertIsInstance(results[0], AblationStimulusResult)
+        self.assertIn(results[0].condition, {"sensory", "ascending"})
+        self.assertGreaterEqual(results[0].spike_loss, 0)
+
+
+class CSVExportTests(unittest.TestCase):
+    """Tests for CSV export helpers."""
+
+    def _make_brain(self, n=10, n_afferent=2, n_efferent=2):
+        rng = np.random.default_rng(17)
+        graph = csr_array(rng.integers(0, 3, size=(n, n)).astype(float))
+        np.fill_diagonal(graph.toarray(), 0)
+
+        flow = np.array(["afferent"] * n_afferent + ["efferent"] * n_efferent + ["intrinsic"] * (n - n_afferent - n_efferent), dtype=object)
+        super_class = np.array(["sensory", "ascending"] + ["descending", "descending"] + ["", "", "", "", "", ""])
+        nerve = np.array(["left ", "right", "", "", "", "", "", "", "", ""])
+        annotations = {
+            "flow": flow,
+            "super_class": super_class,
+            "class": np.array([""] * n),
+            "sub_class": np.array([""] * n),
+            "cell_type": np.array([""] * n),
+            "hemibrain": np.array([""] * n),
+            "hemilineage": np.array([""] * n),
+            "side": np.array([""] * n),
+            "nerve": nerve,
+        }
+        coords = rng.random((n, 3))
+        return Connectome(matrix=graph.tocsr(), annotations=annotations, coordinates=coords)
+
+    def test_multi_stimulus_summary_csv_exports(self):
+        brain = self._make_brain()
+        conditions = [
+            StimulusCondition("sensory", sensory_filter={"super_class": "sensory"}, max_sensory=1),
+            StimulusCondition("ascending", sensory_filter={"super_class": "ascending"}, max_sensory=1),
+        ]
+        result = compare_stimuli(brain, conditions, max_motor=2, hops=0, steps=3, model="threshold", threshold=1.0)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "multi_stimulus.csv"
+            result.to_csv(path)
+            self.assertTrue(path.exists())
+            csv_text = path.read_text()
+            self.assertIn("condition", csv_text)
+            self.assertIn("sensory", csv_text)
+            self.assertIn("ascending", csv_text)
+
+    def test_oscillation_summary_csv_exports(self):
+        brain = self._make_brain()
+        conditions = [
+            StimulusCondition("sensory", sensory_filter={"super_class": "sensory"}, max_sensory=1),
+            StimulusCondition("ascending", sensory_filter={"super_class": "ascending"}, max_sensory=1),
+        ]
+        results = analyze_oscillation(brain, conditions, steps=4, hops=0, model="threshold", threshold=1.0)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "oscillation.csv"
+            export_oscillation_csv(results, path)
+            self.assertTrue(path.exists())
+            csv_text = path.read_text()
+            self.assertIn("condition", csv_text)
+            self.assertIn("dominant_period", csv_text)
+
+
+class OscillationTests(unittest.TestCase):
+    """Tests for oscillation analysis in behavior time series."""
+
+    def _make_brain(self, n=10, n_afferent=2, n_efferent=2):
+        rng = np.random.default_rng(7)
+        graph = csr_array(rng.integers(0, 3, size=(n, n)).astype(float))
+        np.fill_diagonal(graph.toarray(), 0)
+
+        flow = np.array(["afferent"] * n_afferent + ["efferent"] * n_efferent + ["intrinsic"] * (n - n_afferent - n_efferent), dtype=object)
+        super_class = np.array(["sensory", "ascending"] + ["descending", "descending"] + ["", "", "", "", "", ""])
+        nerve = np.array(["left ", "right", "", "", "", "", "", "", "", ""])
+        annotations = {
+            "flow": flow,
+            "super_class": super_class,
+            "class": np.array([""] * n),
+            "sub_class": np.array([""] * n),
+            "cell_type": np.array([""] * n),
+            "hemibrain": np.array([""] * n),
+            "hemilineage": np.array([""] * n),
+            "side": np.array([""] * n),
+            "nerve": nerve,
+        }
+        coords = rng.random((n, 3))
+        return Connectome(matrix=graph.tocsr(), annotations=annotations, coordinates=coords)
+
+    def test_analyze_oscillation_returns_summary_metrics(self):
+        brain = self._make_brain()
+        conditions = [
+            StimulusCondition("sensory", sensory_filter={"super_class": "sensory"}, max_sensory=1),
+            StimulusCondition("ascending", sensory_filter={"super_class": "ascending"}, max_sensory=1),
+        ]
+        result = analyze_oscillation(brain, conditions, steps=4, hops=0, model="threshold", threshold=1.0)
+        self.assertTrue(len(result) >= 2)
+        self.assertIsInstance(result[0], OscillationResult)
+        self.assertIn("condition", result[0].summary())
+        self.assertGreaterEqual(result[0].transition_rate, 0.0)
+        self.assertGreaterEqual(result[0].dominant_period, 1)
 
 
 if __name__ == "__main__":

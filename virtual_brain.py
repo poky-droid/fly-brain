@@ -1,5 +1,6 @@
 """Reusable sparse connectome utilities for the Virtual Fly prototype."""
 
+import csv
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -347,6 +348,275 @@ def ablate_batch(
     return results
 
 
+@dataclass(frozen=True)
+class AblationStimulusResult:
+    """Behavioral effect of ablating one neuron under a named stimulus."""
+
+    neuron_id: int
+    condition: str
+    normal_spikes: int
+    ablated_spikes: int
+    spike_loss: int
+    normal_locomotion: float
+    ablated_locomotion: float
+    delta_locomotion: float
+    normal_turn_bias: float
+    ablated_turn_bias: float
+    delta_turn_bias: float
+    normal_action: str
+    ablated_action: str
+    action_changed: bool
+
+    @property
+    def behavior_disruption(self) -> float:
+        """Aggregate behavioral disruption score for ranking."""
+        return (
+            abs(self.delta_locomotion)
+            + abs(self.delta_turn_bias)
+            + (1.0 if self.action_changed else 0.0)
+        )
+
+
+def _dominant_action(behaviors: list["BehaviorState"]) -> str:
+    if not behaviors:
+        return "rest"
+    actions = [b.action for b in behaviors]
+    return max(set(actions), key=actions.count)
+
+
+def run_ablation_stimulus(
+    brain: "Connectome",
+    conditions: list["StimulusCondition"],
+    top_n: int = 10,
+    max_motor: int = 200,
+    hops: int = 1,
+    steps: int = 6,
+    model: str = "lif",
+    **model_kwargs,
+) -> list[AblationStimulusResult]:
+    """For each stimulus, ablate the top-N most influential neurons and rank by behavioral disruption.
+
+    The experiment compares the original behavior against behavior after ablating each
+    candidate neuron, while keeping the same input stimulus and simulation parameters.
+    """
+    if not conditions:
+        raise ValueError("At least one StimulusCondition is required.")
+    if top_n < 1:
+        raise ValueError("top_n must be >= 1")
+    if model not in ("lif", "threshold"):
+        raise ValueError(f"model must be 'lif' or 'threshold', got {model!r}")
+
+    results: list[AblationStimulusResult] = []
+
+    for cond in conditions:
+        sr = run_sensory_experiment(
+            brain,
+            sensory_filter=cond.sensory_filter,
+            max_sensory=cond.max_sensory,
+            max_motor=max_motor,
+            hops=hops,
+            steps=steps,
+            model=model,
+            **model_kwargs,
+        )
+        sensory_local = np.flatnonzero(np.isin(sr.subgraph_ids, sr.sensory_ids)).tolist()
+        graph = brain.induced_subgraph(sr.sensory_ids.tolist(), hops=hops)[1]
+
+        out_degree = np.asarray(graph.getnnz(axis=1)).ravel() if hasattr(graph, "getnnz") else np.diff(graph.indptr)
+        candidate_local = np.argsort(out_degree)[::-1][:top_n]
+        if candidate_local.size == 0:
+            continue
+
+        normal_behaviors = _decode_behaviors_from_history(brain, sr)
+        normal_total = sr.total_spikes()
+        normal_loco = float(np.mean([b.locomotion_drive for b in normal_behaviors]))
+        normal_bias = float(np.mean([b.turn_bias for b in normal_behaviors]))
+        normal_action = _dominant_action(normal_behaviors)
+
+        for local_idx in candidate_local:
+            ablated_graph = ablate(graph, int(local_idx))
+            if model == "lif":
+                history = [
+                    state.active_indices
+                    for state in lif_propagate(
+                        ablated_graph, sensory_local, steps=steps, **model_kwargs
+                    )
+                ]
+            else:
+                history = propagate_activity(
+                    ablated_graph, sensory_local, steps=steps, **model_kwargs
+                )
+
+            ablated_sr = SensoryExperimentResult(
+                sensory_ids=sr.sensory_ids,
+                motor_ids=sr.motor_ids,
+                history=history,
+                subgraph_ids=sr.subgraph_ids,
+                steps=steps,
+            )
+            ablated_behaviors = _decode_behaviors_from_history(brain, ablated_sr)
+            ablated_total = ablated_sr.total_spikes()
+            ablated_loco = float(np.mean([b.locomotion_drive for b in ablated_behaviors]))
+            ablated_bias = float(np.mean([b.turn_bias for b in ablated_behaviors]))
+            ablated_action = _dominant_action(ablated_behaviors)
+
+            spike_loss = normal_total - ablated_total
+            row = AblationStimulusResult(
+                neuron_id=int(sr.subgraph_ids[int(local_idx)]),
+                condition=cond.name,
+                normal_spikes=normal_total,
+                ablated_spikes=ablated_total,
+                spike_loss=spike_loss,
+                normal_locomotion=normal_loco,
+                ablated_locomotion=ablated_loco,
+                delta_locomotion=ablated_loco - normal_loco,
+                normal_turn_bias=normal_bias,
+                ablated_turn_bias=ablated_bias,
+                delta_turn_bias=ablated_bias - normal_bias,
+                normal_action=normal_action,
+                ablated_action=ablated_action,
+                action_changed=(normal_action != ablated_action),
+            )
+            results.append(row)
+
+    results.sort(key=lambda r: r.behavior_disruption, reverse=True)
+    return results
+
+
+@dataclass(frozen=True)
+class OscillationResult:
+    """Summary metrics for oscillatory behavior in a stimulus condition."""
+
+    condition: str
+    action_sequence: list[str]
+    turn_bias: list[float]
+    locomotion: list[float]
+    transition_rate: float
+    dominant_period: int
+    peak_autocorr_turn_bias: float
+    peak_autocorr_locomotion: float
+
+    def summary(self) -> dict:
+        return {
+            "condition": self.condition,
+            "transition_rate": self.transition_rate,
+            "dominant_period": self.dominant_period,
+            "peak_autocorr_turn_bias": self.peak_autocorr_turn_bias,
+            "peak_autocorr_locomotion": self.peak_autocorr_locomotion,
+        }
+
+
+def export_oscillation_csv(
+    results: list[OscillationResult],
+    path: str | Path,
+) -> Path:
+    """Write oscillation summary rows to CSV and return the path."""
+    output = Path(path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = [
+        "condition",
+        "transition_rate",
+        "dominant_period",
+        "peak_autocorr_turn_bias",
+        "peak_autocorr_locomotion",
+    ]
+    with output.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in (r.summary() for r in results):
+            writer.writerow(row)
+    return output
+
+
+def analyze_oscillation(
+    brain: "Connectome",
+    conditions: list["StimulusCondition"],
+    max_motor: int = 200,
+    hops: int = 1,
+    steps: int = 6,
+    model: str = "lif",
+    **model_kwargs,
+) -> list[OscillationResult]:
+    """Measure oscillatory patterns in behavior for each stimulus condition.
+
+    Metrics computed:
+      - action transition rate
+      - dominant period in action sequence
+      - autocorrelation of turn_bias and locomotion_drive
+    """
+    if not conditions:
+        raise ValueError("At least one StimulusCondition is required.")
+    if model not in ("lif", "threshold"):
+        raise ValueError(f"model must be 'lif' or 'threshold', got {model!r}")
+
+    results: list[OscillationResult] = []
+    for cond in conditions:
+        sr = run_sensory_experiment(
+            brain,
+            sensory_filter=cond.sensory_filter,
+            max_sensory=cond.max_sensory,
+            max_motor=max_motor,
+            hops=hops,
+            steps=steps,
+            model=model,
+            **model_kwargs,
+        )
+        behaviors = _decode_behaviors_from_history(brain, sr)
+        action_sequence = [b.action for b in behaviors]
+        turn_bias = [b.turn_bias for b in behaviors]
+        locomotion = [b.locomotion_drive for b in behaviors]
+
+        transitions = 0
+        for a, b in zip(action_sequence, action_sequence[1:]):
+            if a != b:
+                transitions += 1
+        transition_rate = transitions / max(len(action_sequence) - 1, 1)
+
+        def _dominant_period(series: list[float]) -> int:
+            if len(series) < 2:
+                return 1
+            n = len(series)
+            best_period = 1
+            best_score = -np.inf
+            for period in range(1, n):
+                if n % period != 0:
+                    continue
+                score = 0.0
+                for start in range(0, n - period):
+                    score += abs(series[start] - series[start + period])
+                score /= (n - period)
+                if score > best_score:
+                    best_score = score
+                    best_period = period
+            return best_period
+
+        def _autocorr(series: list[float]) -> float:
+            if len(series) < 2:
+                return 0.0
+            x = np.asarray(series, dtype=float)
+            x = x - np.mean(x)
+            var = float(np.var(x))
+            if var == 0:
+                return 0.0
+            y = np.correlate(x, x, mode="full")[len(x)-1:]
+            return float(np.max(y[1:]) / y[0]) if y[0] != 0 else 0.0
+
+        results.append(
+            OscillationResult(
+                condition=cond.name,
+                action_sequence=action_sequence,
+                turn_bias=turn_bias,
+                locomotion=locomotion,
+                transition_rate=float(transition_rate),
+                dominant_period=_dominant_period(turn_bias),
+                peak_autocorr_turn_bias=_autocorr(turn_bias),
+                peak_autocorr_locomotion=_autocorr(locomotion),
+            )
+        )
+
+    return results
+
+
 def _validate_indices(indices: Iterable[int], size: int) -> np.ndarray:
     values = np.asarray(list(indices), dtype=int)
     if values.size and (values.min() < 0 or values.max() >= size):
@@ -651,6 +921,26 @@ class MultiStimulusResult:
                 "dominant_action": max(set(actions), key=actions.count),
             })
         return rows
+
+    def to_csv(self, path: str | Path) -> Path:
+        """Write summary rows to a CSV file and return the path."""
+        output = Path(path)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        fieldnames = [
+            "condition",
+            "seed_neurons",
+            "total_spikes",
+            "motor_spikes",
+            "mean_locomotion",
+            "mean_turn_bias",
+            "dominant_action",
+        ]
+        with output.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=fieldnames)
+            writer.writeheader()
+            for row in self.summary():
+                writer.writerow(row)
+        return output
 
 
 def compare_stimuli(
