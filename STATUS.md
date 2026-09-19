@@ -114,6 +114,7 @@ virtual-fly/
 ├── test_virtual_fly_v1.py    # V1 body/environment/FlyWire regression tests
 ├── visualize_activity.py     # 3-D scatter activity visualization
 ├── visualize_behavior.py     # Behavioral readout figure (5-panel, multi-condition)
+├── visualize_obstacle.py     # Obstacle arena, collision markers, and motor telemetry plot
 ├── test_virtual_brain.py     # Core unit tests (34 tests, all passing)
 ├── requirements.txt          # Pinned dependencies
 ├── .gitignore
@@ -204,6 +205,7 @@ python -m unittest -v test_virtual_brain.py
 | `VirtualFlyV1Tests` | 2-D body movement, light sensing, and closed-loop trajectory |
 | `FlyWireBrain` adapter | Persistent LIF state, sensory-bank encoding, motor decoding, reset determinism |
 | `Behavioral scenarios` | Light approach, obstacle collision, and left/right/front trajectory metrics |
+| `Obstacle visualization` | Obstacle geometry, trajectory, collision markers, and motor telemetry |
 
 ---
 

@@ -32,6 +32,17 @@ def plot_trajectory(steps, environment: Environment2D, ax=None):
 
     if steps:
         ax.plot([item.x for item in steps], [item.y for item in steps], "o-", color="tab:blue")
+        collisions = [item for item in steps if getattr(item, "collision", False)]
+        if collisions:
+            ax.scatter(
+                [item.x for item in collisions],
+                [item.y for item in collisions],
+                color="crimson",
+                marker="x",
+                s=55,
+                label="collision",
+            )
+            ax.legend()
     ax.set_xlabel("x")
     ax.set_ylabel("y")
     return ax
