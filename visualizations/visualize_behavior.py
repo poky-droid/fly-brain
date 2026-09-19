@@ -9,7 +9,7 @@ Produces a figure with:
 
 Usage
 -----
-  python visualize_behavior.py --steps 12 --model lif --save output_behavior.png
+  python -m visualizations.visualize_behavior --steps 12 --model lif --save artifacts/figures/output_behavior.png
 """
 
 import argparse
@@ -198,7 +198,7 @@ def main() -> None:
     parser.add_argument("--max-motor", type=int,   default=200)
     parser.add_argument("--model",     choices=["lif", "threshold"], default="lif")
     parser.add_argument("--save",      type=str,   default=None,
-                        help="Path to save figure, e.g. output_behavior.png")
+                        help="Path to save figure, e.g. artifacts/figures/output_behavior.png")
 
     # LIF params
     parser.add_argument("--lif-threshold",    type=float, default=0.5)

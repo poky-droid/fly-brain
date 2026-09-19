@@ -112,7 +112,7 @@ Behavioral readout sekarang sudah dibungkus dengan implementasi V1:
 - `virtual_fly/environment.py`: 2-D arena, light/food/obstacle primitives, and left/right sensing
 - `virtual_fly/controller.py`: sensory-to-motor action mapping
 - `virtual_fly/simulation.py`: timestep loop and trajectory records
-- `run_fly_simulation.py`: runnable trajectory demo
+- `experiments/run_fly_simulation.py`: runnable trajectory demo
 
 The current loop is:
 
@@ -152,7 +152,7 @@ Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQL
 
 Target eksperimen:
 
-Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   python run_ablation_stimulus.py \      --steps 20 \      --top-n 10 \      --model lif   `
+Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   python -m experiments.run_ablation_stimulus \      --steps 20 \      --top-n 10 \      --model lif   `
 
 Output akhirnya bukan cuma spike\_loss, tetapi:
 

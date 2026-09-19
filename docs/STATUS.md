@@ -89,40 +89,18 @@ Computational neuroscience prototype simulating *Drosophila melanogaster* neural
 
 ```
 virtual-fly/
-├── virtual_brain.py          # Core library (~700 lines)
-├── run_propagation.py        # CLI: threshold vs LIF propagation
-├── run_ablation_batch.py     # CLI: batch ablation of top-N neurons
-├── run_sensory_experiment.py # CLI: sensory → network → motor simulation
-├── run_virtual_fly.py        # CLI: full VirtualFly behavioral simulation
-├── run_multi_stimulus.py     # CLI: multi-stimulus comparison
-├── sensitivity_sweep.py      # Reproducible sweep over threshold/leak/weight_scale/refractory_steps
-├── analyze_sensitivity.py    # Correlation + effect-size + ranking summary across sweep results
-├── export_results.py         # Tabular CSV export for condition-by-timestep results
-├── run_fly_simulation.py     # CLI: closed-loop 2-D VirtualFly trajectory
-├── validate_flywire_stimuli.py # CLI: compare left, right, and front FlyWire responses
-├── validate_temporal_dynamics.py # CLI: temporal raw-spike diagnostics across six protocols
-├── validate_behavioral_scenarios.py # CLI: scenario metrics and trajectory CSVs
-├── validate_directional_behavior.py # CLI: closed-loop left/right/front evaluation
-├── analyze_directional_temporal.py # CLI: timestep bias and action distribution analysis
-├── validate_directional_navigation.py # CLI: target distance and heading trajectory evaluation
-├── analyze_navigation_failure.py # CLI: heading-error and trajectory failure analysis
-├── analyze_motor_body_causality.py # CLI: motor action/bias to body delta analysis
-├── analyze_sensor_motor_timing.py # CLI: sensor, motor, action, and body lag analysis
-├── evaluate_intervention_layers.py # CLI: FlyWire baseline vs oracle/intervention control
-├── analyze_neural_behavior_translation.py # CLI: FlyWire actions vs geometric reference
+├── virtual_brain/            # Core library package
 ├── virtual_fly/              # V1 body, environment, FlyWire brain, simulation, plotting
-├── test_virtual_fly_v1.py    # V1 body/environment/FlyWire regression tests
-├── visualize_activity.py     # 3-D scatter activity visualization
-├── visualize_behavior.py     # Behavioral readout figure (5-panel, multi-condition)
-├── visualize_obstacle.py     # Obstacle arena, collision markers, and motor telemetry plot
-├── test_virtual_brain.py     # Core unit tests (34 tests, all passing)
+├── experiments/              # Runnable experiments and CSV export CLIs
+│   └── analysis/             # Validation and post-hoc analysis CLIs
+├── visualizations/           # Plotting entrypoints
+├── tests/                    # Core and V1 regression tests
+├── tools/                    # Exploratory inspection scripts
+├── docs/                     # PRD, project status, and roadmap notes
+├── artifacts/figures/        # Historical root-level figures
+├── results/                  # Experiment outputs
 ├── requirements.txt          # Pinned dependencies
 ├── .gitignore
-├── STATUS.md                 # ← this file
-├── analyze_brain.py          # Exploratory script
-├── explore_neuron.py         # Exploratory script (csr_array bug fixed)
-├── inspect_annotations.py    # Exploratory script
-├── neuron_info.py            # Exploratory script
 └── data/
     ├── connectome.mat
     ├── annotations.mat
@@ -131,7 +109,7 @@ virtual-fly/
 
 ---
 
-## Core Library — `virtual_brain.py`
+## Core Library — `virtual_brain/`
 
 ### Dataclasses
 
@@ -159,8 +137,8 @@ virtual-fly/
 | `run_sensory_experiment()` | Afferent seed → sub-connectome → efferent tracking |
 | `compare_stimuli()` | Run multiple `StimulusCondition`s and return `MultiStimulusResult` |
 | `analyze_oscillation()` | Compute dominant period, transition rate, and autocorrelation across behavior time series |
-| `sensitivity_sweep.py` | Sweep threshold/leak/weight_scale/refractory_steps and export one row per parameter set |
-| `analyze_sensitivity.py` | Rank the sensitivity of outputs by correlation magnitude and simple effect size |
+| `experiments/sensitivity_sweep.py` | Sweep threshold/leak/weight_scale/refractory_steps and export one row per parameter set |
+| `experiments/analysis/analyze_sensitivity.py` | Rank the sensitivity of outputs by correlation magnitude and simple effect size |
 
 ### VirtualFly class
 
@@ -186,7 +164,7 @@ Wraps a `Connectome` into a fly agent. `run()` returns a list of `BehaviorState`
 ## Tests
 
 ```
-python -m unittest -v test_virtual_brain.py
+python -m unittest discover -s tests -v
 ```
 
 43 tests across the core and V1 suites — all passing:
@@ -253,14 +231,14 @@ Key observations:
 - `sensory` shows more oscillation between `walk_forward` and `turn_right` per step
 
 ```bash
-python run_multi_stimulus.py --steps 8 --model lif
+python -m experiments.run_multi_stimulus --steps 8 --model lif
 ```
 
 ---
 
 ### Behavioral Readout Visualization ✅
 
-**File:** `visualize_behavior.py`
+**File:** `visualizations/visualize_behavior.py`
 
 5-panel matplotlib figure comparing all stimulus conditions:
 
@@ -273,7 +251,7 @@ python run_multi_stimulus.py --steps 8 --model lif
 | Row 5 | Action distribution bar chart (all conditions side-by-side) |
 
 ```bash
-python visualize_behavior.py --steps 12 --model lif --save output_behavior.png
+python -m visualizations.visualize_behavior --steps 12 --model lif --save artifacts/figures/output_behavior.png
 ```
 
 ### FlyWireBrain Closed-Loop Adapter ✅
@@ -301,7 +279,7 @@ smoke test loads the connectome and produces `walk_forward` and `turn_right`
 actions in the trajectory CLI:
 
 ```bash
-python run_fly_simulation.py --steps 40
+python -m experiments.run_fly_simulation --steps 40
 ```
 
 The adapter now selects balanced afferent populations using the dataset's
@@ -312,13 +290,13 @@ stimulus validation CLI.
 
 ### FlyWire Stimulus Validation ✅
 
-**File:** `validate_flywire_stimuli.py`
+**File:** `experiments/analysis/validate_flywire_stimuli.py`
 
 The validation holds the fly pose fixed, resets the brain for each condition,
 and compares three light positions:
 
 ```bash
-python validate_flywire_stimuli.py --steps 6
+python -m experiments.analysis.validate_flywire_stimuli --steps 6
 ```
 
 The real-connectome run produced distinct sensory inputs and distinct motor
@@ -346,7 +324,7 @@ not a consequence of an empty left decoder population.
 
 ### Temporal Dynamics Validation ✅
 
-**File:** `validate_temporal_dynamics.py`
+**File:** `experiments/analysis/validate_temporal_dynamics.py`
 
 Six controlled protocols were measured for 100 timesteps:
 
@@ -369,7 +347,7 @@ ongoing neural rhythm.
 Run the diagnostic with:
 
 ```bash
-python validate_temporal_dynamics.py --steps 100
+python -m experiments.analysis.validate_temporal_dynamics --steps 100
 ```
 
 This milestone measures the temporal behavior without modifying or claiming
@@ -378,7 +356,7 @@ comparisons remain the next calibration work.
 
 ### Behavioral Scenario Evaluation ✅
 
-**File:** `validate_behavioral_scenarios.py`
+**File:** `experiments/analysis/validate_behavioral_scenarios.py`
 
 Five 100-timestep closed-loop scenarios now produce reproducible metrics and
 trajectory CSVs:
@@ -411,7 +389,7 @@ results/behavioral_scenarios/baseline_milestone_17.csv
 
 ### Directional Behavioral Evaluation ✅
 
-**File:** `validate_directional_behavior.py`
+**File:** `experiments/analysis/validate_directional_behavior.py`
 
 The focused 100-step closed-loop evaluation compares `left`, `right`, and
 `front` light stimuli while recording the complete requested/applied action,
@@ -437,7 +415,7 @@ LIF, decoder, or collision parameters were changed.
 
 ### Temporal Directional Analysis ✅
 
-**File:** `analyze_directional_temporal.py`
+**File:** `experiments/analysis/analyze_directional_temporal.py`
 
 The existing 100-step directional trajectory was analyzed at each timestep,
 without rerunning or changing the brain. The output includes:
@@ -464,7 +442,7 @@ motor bias. This is a measurement result, not a tuning target.
 
 ### Directional Closed-Loop Navigation ✅
 
-**File:** `validate_directional_navigation.py`
+**File:** `experiments/analysis/validate_directional_navigation.py`
 
 This evaluator places a target light in the body-centered `left`, `right`, or
 `front` position and lets the body move while the environment recomputes the
@@ -495,7 +473,7 @@ were changed.
 
 ### Navigation Failure Analysis ✅
 
-**File:** `analyze_navigation_failure.py`
+**File:** `experiments/analysis/analyze_navigation_failure.py`
 
 The Milestone 20 trajectories are now analyzed without rerunning the brain.
 The analyzer produces:
@@ -523,7 +501,7 @@ body movement. No navigation correction or neural tuning was applied.
 
 ### Motor-to-Body Causality Analysis ✅
 
-**File:** `analyze_motor_body_causality.py`
+**File:** `experiments/analysis/analyze_motor_body_causality.py`
 
 The Milestone 20 trajectory was analyzed without rerunning the brain. Outputs:
 
@@ -552,7 +530,7 @@ interaction rather than the basic action-to-body mapping.
 
 ### Sensor-to-Motor Timing Analysis ✅
 
-**File:** `analyze_sensor_motor_timing.py`
+**File:** `experiments/analysis/analyze_sensor_motor_timing.py`
 
 The Milestone 20 trajectory was analyzed for timestep changes in sensor
 asymmetry, motor bias, requested action, heading, position, and distance. The
@@ -621,7 +599,7 @@ decoder parameters were changed.
 
 ### Neural-to-Behavior Translation Analysis ✅
 
-**File:** `analyze_neural_behavior_translation.py`
+**File:** `experiments/analysis/analyze_neural_behavior_translation.py`
 
 The baseline FlyWire trajectory is compared against a geometric reference
 action derived only from heading error (`turn_left`, `turn_right`, or
@@ -685,9 +663,9 @@ controller question for the next milestone.
 - `peak_autocorr_turn_bias` — strongest positive autocorrelation in directional bias
 - `peak_autocorr_locomotion` — strongest positive autocorrelation in locomotion drive
 
-**Implementation:** `analyze_oscillation()` in `virtual_brain.py` consumes the real `SensoryExperimentResult` stream and summarizes each condition in an `OscillationResult`.
+**Implementation:** `analyze_oscillation()` in `virtual_brain/__init__.py` consumes the real `SensoryExperimentResult` stream and summarizes each condition in an `OscillationResult`.
 
-**Validation:** verified with the full project suite using `python -m unittest -v test_virtual_brain.py` — 34 tests pass.
+**Validation:** verified with the full project suite using `python -m unittest discover -s tests -v`.
 
 ---
 
@@ -696,8 +674,8 @@ controller question for the next milestone.
 **Goal:** determine which LIF parameters most strongly shape observable behavior, beyond a single default configuration.
 
 **Files:**
-- `sensitivity_sweep.py` — reproducible sweep over `threshold`, `leak`, `weight_scale`, and `refractory_steps`
-- `analyze_sensitivity.py` — computes parameter→output correlation, average output shifts, simple effect size, and ranking by absolute correlation magnitude
+- `experiments/sensitivity_sweep.py` — reproducible sweep over `threshold`, `leak`, `weight_scale`, and `refractory_steps`
+- `experiments/analysis/analyze_sensitivity.py` — computes parameter→output correlation, average output shifts, simple effect size, and ranking by absolute correlation magnitude
 
 **Outputs tracked per row:**
 - `condition`
@@ -726,7 +704,7 @@ controller question for the next milestone.
 | High | Behavior-guided ablation | Rank neurons by behavior disruption rather than raw spike loss alone |
 | Medium | Add more stimulus types | Verify `class` / `sub_class` labels with `inspect_annotations.py` to define `visual`, `tactile`, etc. |
 | Medium | CSV export packaging | Save per-condition CSVs under `results/` with clear naming convention |
-| Low | 3-D anatomical overlay | Color neurons by condition in `visualize_activity.py` |
+| Low | 3-D anatomical overlay | Color neurons by condition in `visualizations/visualize_activity.py` |
 | Low | Remote git identity | `git config --global user.name / user.email` to fix committer name warning |
 
 ---
