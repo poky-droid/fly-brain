@@ -624,6 +624,16 @@ def _validate_indices(indices: Iterable[int], size: int) -> np.ndarray:
     return np.unique(values)
 
 
+def _annotation_matches_any(
+    brain: "Connectome",
+    field: str,
+    values: Iterable[str],
+) -> np.ndarray:
+    """Return IDs matching any spelling variant of an annotation value."""
+    matches = [brain.annotation_matches(field, value) for value in values]
+    return np.unique(np.concatenate(matches)) if matches else np.empty(0, dtype=int)
+
+
 # ============================================================
 # SENSORY / MOTOR INTERFACE
 # ============================================================
@@ -800,13 +810,24 @@ class VirtualFly:
     afferent activity to discrete behavioral states each timestep.
     """
 
-    def __init__(self, brain: "Connectome", max_sensory: int = 50, hops: int = 1) -> None:
+    def __init__(
+        self,
+        brain: "Connectome",
+        max_sensory: int = 50,
+        hops: int = 1,
+        sensory_ids: Iterable[int] | None = None,
+    ) -> None:
         self.brain = brain
         self.max_sensory = max_sensory
         self.hops = hops
 
         # Cache afferent seeds
-        self._sensory_ids = brain.annotation_matches("flow", "afferent")[:max_sensory]
+        if sensory_ids is None:
+            self._sensory_ids = brain.annotation_matches("flow", "afferent")[:max_sensory]
+        else:
+            selected = _validate_indices(sensory_ids, brain.neuron_count)
+            afferent = brain.annotation_matches("flow", "afferent")
+            self._sensory_ids = np.intersect1d(selected, afferent)[:max_sensory]
 
         # Build sub-connectome once
         self._subgraph_ids, self._graph = brain.induced_subgraph(
@@ -827,7 +848,7 @@ class VirtualFly:
         self._endocrine_local = np.flatnonzero(np.isin(self._subgraph_ids, endo))
 
         left = brain.annotation_matches("flow", "efferent")
-        left = np.intersect1d(left, brain.annotation_matches("nerve", "left "))
+        left = np.intersect1d(left, _annotation_matches_any(brain, "nerve", ("left", "left ")))
         self._left_local = np.flatnonzero(np.isin(self._subgraph_ids, left))
 
         right = brain.annotation_matches("flow", "efferent")
@@ -1032,7 +1053,7 @@ def _decode_behaviors_from_history(
 
     descending_local = _local("efferent", "descending")
     left_local = np.flatnonzero(
-        np.isin(subgraph_ids, brain.annotation_matches("nerve", "left "))
+        np.isin(subgraph_ids, _annotation_matches_any(brain, "nerve", ("left", "left ")))
     )
     right_local = np.flatnonzero(
         np.isin(subgraph_ids, brain.annotation_matches("nerve", "right"))

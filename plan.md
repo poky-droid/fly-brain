@@ -104,9 +104,17 @@ Bukan ranking biologis, tetapi ranking berdasarkan:
 
 Ini bisa menjadi salah satu hasil utama penelitian.
 
-# 6\. 🌍 Baru Environment Loop
+# 6\. 🌍 Environment Loop — V1 IMPLEMENTED
 
-Setelah behavioral readout sudah stabil, baru kita bikin:
+Behavioral readout sekarang sudah dibungkus dengan implementasi V1:
+
+- `virtual_fly/fly.py`: bounded-body pose and simple movement state
+- `virtual_fly/environment.py`: 2-D arena, light/food/obstacle primitives, and left/right sensing
+- `virtual_fly/controller.py`: sensory-to-motor action mapping
+- `virtual_fly/simulation.py`: timestep loop and trajectory records
+- `run_fly_simulation.py`: runnable trajectory demo
+
+The current loop is:
 
 Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML              `┌──────────────────┐                │    Environment   │                │                  │                │ position         │                │ food             │                │ obstacle         │                │ light            │                └────────┬─────────┘                         │                      sensory                         ↓                ┌──────────────────┐                │   Virtual Brain  │                └────────┬─────────┘                         │                       motor                         ↓                ┌──────────────────┐                │    VirtualFly    │                └────────┬─────────┘                         │                         └──────────→ Environment`
 
@@ -114,9 +122,11 @@ Contoh:
 
 Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   Fly position = (10, 5)  action = walk      ↓  position = (11, 5)  action = turn_right      ↓  heading = 90°   `
 
-Kemudian posisi baru menghasilkan sensory input baru.
+Kemudian posisi baru menghasilkan sensory input baru. The first V1 implementation is
+deterministic and controller-driven; persistent FlyWire LIF state and biological
+sensor-neuron mapping remain the next integration step.
 
-**Ini baru benar-benar closed-loop.**
+**Ini sudah menjadi closed-loop V1.**
 
 # 7\. 📝 Setelah itu: mulai framing paper
 

@@ -1,0 +1,2 @@
+scenario,steps,collision_rate,movement_fraction,notes
+obstacle,100,0.910,0.090,Milestone 17 baseline; no brain or collision-policy changes

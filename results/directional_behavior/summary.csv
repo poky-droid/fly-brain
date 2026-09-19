@@ -1,0 +1,4 @@
+condition,steps,mean_left_sensor,mean_right_sensor,mean_left_drive,mean_right_drive,mean_locomotion,mean_turn_bias,turn_count,collision_count,collision_rate,movement_fraction,action_distribution
+left,100,0.13386127364537045,0.0,0.3294642857142857,0.32926829268292684,0.10238095238095238,-0.00019599303135887626,21,68,0.68,0.31,"{'idle': 1, 'turn_left': 11, 'walk_forward': 10, 'turn_right': 10, 'rest': 68}"
+right,100,0.0,0.12014590141187802,0.32875,0.33170731707317075,0.11133333333333333,0.002957317073170733,24,66,0.66,0.34,"{'turn_right': 13, 'turn_left': 11, 'walk_forward': 10, 'rest': 66}"
+front,100,0.16254650658152786,0.026452980288312854,0.33035714285714285,0.33170731707317075,0.10095238095238095,0.0013501742160279113,1,69,0.69,0.31,"{'turn_right': 1, 'walk_forward': 30, 'rest': 69}"
